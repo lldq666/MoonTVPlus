@@ -1,36 +1,44 @@
-name: Upstream Sync
+name: Fork Sync
 
 permissions:
-  contents: write
+    contents: write
 
 on:
-  schedule:
-    - cron: "0 0 * * *"  # 每天 0 点执行一次
-  workflow_dispatch:     # 支持手动触发
+    schedule:
+        - cron: "0 0 * * *"  # 每天午夜执行
+    workflow_dispatch:  # 允许手动触发
 
 jobs:
-  sync_with_upstream:
-    name: Sync with Upstream
-    runs-on: ubuntu-latest
-    if: ${{ github.event.repository.fork }}
-    
-    steps:
-      - name: Checkout target repo
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-      
-      - name: Sync Upstream
-        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.1
-        with:
-          target_repo_token: ${{ secrets.GITHUB_TOKEN }}
-          upstream_sync_repo: mtvpls/MoonTVPlus  # 替换为上游仓库路径
-          upstream_sync_branch: main
-          target_sync_branch: main
-          test_mode: false
-      
-      - name: Check for Failure
-        if: failure()
-        run: |
-          echo "[Error] 同步失败，可能是上游 workflow 文件变更导致 GitHub 暂停了定时任务，需要手动同步。"
-          exit 1
+    sync_with_upstream:
+        name: Sync with Upstream
+        runs-on: ubuntu-latest
+        if: ${{ github.event.repository.fork }}
+
+        steps:
+            - name: Checkout target repo
+              uses: actions/checkout@v4
+              with:
+                token: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Sync Upstream
+              uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
+              with:
+                  target_repo_token: ${{ secrets.GITHUB_TOKEN }}
+                  upstream_sync_repo: mtvpls/MoonTVPlus
+                  upstream_sync_branch: main
+                  target_sync_branch: main
+                  test_mode: false
+
+            - name: Check for new commits
+              if: success()
+              run: echo "Sync completed successfully"
+
+            - name: Check for Failure
+              if: failure()
+              run: |
+                  echo "[Error] Sync failed. This might be due to:"
+                  echo "1. Changes in the upstream workflow file"
+                  echo "2. Merge conflicts that need manual resolution"
+                  echo "3. Network issues"
+                  echo "Please check the logs and consider manual sync if needed."
+                  exit 1
