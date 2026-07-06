@@ -8,6 +8,8 @@ export interface AdminConfig {
   SiteConfig: {
     SiteName: string;
     Announcement: string;
+    // 公告显示模式：once=单次显示（每个用户每条公告仅显示一次，换公告则重新显示）；every=每次显示（每次打开首页都显示）
+    AnnouncementDisplayMode?: 'once' | 'every';
     SearchDownstreamMaxPage: number;
     SiteInterfaceCacheTime: number;
     DoubanProxyType: string;
@@ -341,6 +343,19 @@ export interface AdminConfig {
       apiKey: string; // Resend API Key
       from: string; // 发件人邮箱
     };
+  };
+  TelegramConfig?: {
+    enabled: boolean; // 是否启用 Telegram Bot
+    botToken?: string; // Bot Token，仅服务端使用
+    botUsername?: string; // Bot 用户名，用于前端跳转
+    webhookSecret?: string; // Webhook Secret Token
+    apiProxy?: string; // Telegram Bot API 系统代理（HTTP/HTTPS proxy）
+    apiBaseUrl?: string; // Telegram Bot API 反代 Base URL
+    loginEnabled?: boolean; // 是否启用 Telegram 登录
+    bindingEnabled?: boolean; // 是否启用用户绑定
+    registrationEnabled?: boolean; // 是否启用 Telegram 注册
+    notificationsEnabled?: boolean; // 是否启用 Telegram 通知
+    defaultNotifications?: boolean; // 新绑定用户默认开启通知
   };
   MusicConfig?: {
     Enabled?: boolean; // 启用音乐功能

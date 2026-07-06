@@ -123,6 +123,7 @@ interface SearchCachePayload {
 }
 
 type CustomSubtitleEngine = 'native' | 'jassub';
+type PlaybackSourceBadge = 'local' | 'offline' | null;
 
 interface CustomSubtitleState {
   name: string;
@@ -1535,6 +1536,7 @@ function PlayPageClient() {
 
   // 视频播放地址
   const [videoUrl, setVideoUrl] = useState('');
+  const [playbackSourceBadge, setPlaybackSourceBadge] = useState<PlaybackSourceBadge>(null);
 
   // 视频清晰度列表
   const [videoQualities, setVideoQualities] = useState<Array<{ name: string, url: string }>>([]);
@@ -1625,6 +1627,7 @@ function PlayPageClient() {
       setCorsFailedUrl(null);
       setIsVideoLoading(true);
       setVideoLoadingStage('sourceChanging');
+      setPlaybackSourceBadge(null);
       setVideoUrl(playUrl);
       setToast({
         message: '转码任务已创建，等待 3 秒后已切换到转码地址',
@@ -3112,8 +3115,10 @@ function PlayPageClient() {
     ) {
       // 这类源统一先走详情懒加载，如果 episodes 为空则跳过
       if (isLazyDetailSource(detailData?.source) && (!detailData?.episodes || detailData.episodes.length === 0)) {
+        setPlaybackSourceBadge(null);
         return;
       }
+      setPlaybackSourceBadge(null);
       setVideoUrl('');
       return;
     }
@@ -3124,6 +3129,7 @@ function PlayPageClient() {
     const requestSeq = ++videoUrlRequestSeqRef.current;
 
     let newUrl = detailData?.episodes[episodeIndex] || '';
+    let nextPlaybackSourceBadge: PlaybackSourceBadge = null;
     const isXiaoyaLazyPlayUrl = newUrl.startsWith('/api/xiaoya/play');
 
     if (isEpisodeSwitchRequest && isXiaoyaLazyPlayUrl) {
@@ -3266,6 +3272,7 @@ function PlayPageClient() {
         const modifiedContent = modifiedLines.join('\n');
         const m3u8Blob = new Blob([modifiedContent], { type: 'application/vnd.apple.mpegurl' });
         newUrl = URL.createObjectURL(m3u8Blob);
+        nextPlaybackSourceBadge = 'local';
 
         // 保存 Blob URLs 到 window，以便在切换视频时清理
         (window as any).__localFileBlobUrls = blobUrls;
@@ -3297,6 +3304,7 @@ function PlayPageClient() {
           (window as any).__localFileBlobUrls = indexedDBCheck.objectUrls;
         }
         newUrl = indexedDBCheck.url;
+        nextPlaybackSourceBadge = 'local';
         console.log(
           `使用 IndexedDB 本地缓存播放（${indexedDBCheck.mode === 'service-worker' ? 'Service Worker' : 'Blob 降级'} 模式）:`,
           episodeTitle
@@ -3314,6 +3322,7 @@ function PlayPageClient() {
       if (hasLocalFile) {
         // 使用本地代理接口,URL以.m3u8结尾以便Artplayer自动识别
         newUrl = `/api/offline-download/local/${currentSource}/${currentId}/${episodeIndex}/playlist.m3u8`;
+        nextPlaybackSourceBadge = 'offline';
         console.log('使用服务器端本地下载文件播放:', newUrl);
       } else {
         const isM3u8 = newUrl.toLowerCase().includes('.m3u') || !newUrl.toLowerCase().match(/\.(mp4|flv|webm|mkv|avi|mov)(\?.*)?$/);
@@ -3343,6 +3352,7 @@ function PlayPageClient() {
       }
       setVideoUrl(newUrl);
     }
+    setPlaybackSourceBadge(nextPlaybackSourceBadge);
   };
 
   // 处理下载指定集数（支持批量下载）
@@ -9541,6 +9551,11 @@ function PlayPageClient() {
                 </span>
               );
             })()}
+            {playbackSourceBadge && (
+              <span className='inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300'>
+                {playbackSourceBadge === 'local' ? '本地播放' : '离线播放'}
+              </span>
+            )}
           </h1>
         </div>
         {/* 第二行：播放器和选集 */}

@@ -231,6 +231,12 @@ export const UserMenu: React.FC = () => {
   const [emailSettingsMessageType, setEmailSettingsMessageType] = useState<
     'success' | 'error' | null
   >(null);
+  const [telegramEnabled, setTelegramEnabled] = useState(false);
+  const [telegramBound, setTelegramBound] = useState(false);
+  const [telegramUsername, setTelegramUsername] = useState('');
+  const [telegramBindCode, setTelegramBindCode] = useState('');
+  const [telegramDeepLink, setTelegramDeepLink] = useState('');
+  const [telegramBindingBusy, setTelegramBindingBusy] = useState(false);
 
   // 设备管理状态
   const [devices, setDevices] = useState<any[]>([]);
@@ -896,10 +902,40 @@ export const UserMenu: React.FC = () => {
         );
         setPushNotifications(Boolean(pushData.pushNotifications));
       }
+
+      const telegramResponse = await fetch('/api/telegram/bind');
+      if (telegramResponse.ok) {
+        const telegramData = await telegramResponse.json();
+        setTelegramEnabled(Boolean(telegramData.enabled));
+        setTelegramBound(Boolean(telegramData.binding));
+        setTelegramUsername(telegramData.binding?.telegramUsername || '');
+      }
     } catch (error) {
       console.error('加载通知设置失败:', error);
     } finally {
       setEmailSettingsLoading(false);
+    }
+  };
+
+  const handleCreateTelegramBindCode = async () => {
+    setTelegramBindingBusy(true);
+    setEmailSettingsMessage('');
+    setEmailSettingsMessageType(null);
+    try {
+      const response = await fetch('/api/telegram/bind', { method: 'POST' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || '生成 Telegram 绑定码失败');
+      }
+      setTelegramBindCode(data.code || '');
+      setTelegramDeepLink(data.deepLink || '');
+      setEmailSettingsMessage('Telegram 绑定码已生成，请在 10 分钟内完成绑定');
+      setEmailSettingsMessageType('success');
+    } catch (error) {
+      setEmailSettingsMessage(error instanceof Error ? error.message : '生成 Telegram 绑定码失败');
+      setEmailSettingsMessageType('error');
+    } finally {
+      setTelegramBindingBusy(false);
     }
   };
 
@@ -5276,6 +5312,13 @@ export const UserMenu: React.FC = () => {
         pushNotificationsSupported={pushNotificationsSupported}
         pushNotificationsConfigured={pushNotificationsConfigured}
         pushNotificationsBusy={pushNotificationsBusy}
+        telegramEnabled={telegramEnabled}
+        telegramBound={telegramBound}
+        telegramUsername={telegramUsername}
+        telegramBindCode={telegramBindCode}
+        telegramDeepLink={telegramDeepLink}
+        telegramBindingBusy={telegramBindingBusy}
+        onCreateTelegramBindCode={handleCreateTelegramBindCode}
         emailSettingsLoading={emailSettingsLoading}
         emailSettingsSaving={emailSettingsSaving}
         onSave={handleSaveEmailSettings}
