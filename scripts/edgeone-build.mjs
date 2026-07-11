@@ -222,6 +222,222 @@ function patchEdgeFunctionEnvInjection() {
   console.log('[edgeone-build] Patched edge function process.env injection');
 }
 
+/**
+ * Fix /api returning HTTP 404 while body is correct and function logs show 200.
+ *
+ * EdgeOne route model:
+ * - rules before { handle: "filesystem" } = preprocess
+ * - filesystem tries static assets first (miss often becomes 404)
+ * - rules after filesystem = SSR / API back-to-origin
+ *
+ * If /api is not explicitly listed after filesystem, static miss 404 can leak to
+ * the client even when ssr-node successfully returns 200 + body.
+ *
+ * @see https://pages.edgeone.ai/document/building-output-configuration
+ */
+function isApiRouteRule(route) {
+  if (!route || typeof route.src !== 'string') {
+    return false;
+  }
+  return (
+    route.src === '^/api/(.*)$' ||
+    route.src === '^/api(?:/.*)?$' ||
+    route.src === '^/api$' ||
+    route.src === '/api/(.*)' ||
+    route.src === '/api/*'
+  );
+}
+
+function isCatchAllRoute(route) {
+  if (!route || typeof route.src !== 'string') {
+    return false;
+  }
+  return (
+    route.src === '/.*' ||
+    route.src === '^/.*$' ||
+    route.src === '^(.*)$' ||
+    route.src === '/(.*)'
+  );
+}
+
+function patchSsrNodeRoutes() {
+  const configPath = join(
+    process.cwd(),
+    '.edgeone',
+    'cloud-functions',
+    'ssr-node',
+    'config.json'
+  );
+
+  let raw;
+  try {
+    raw = readFileSync(configPath, 'utf8');
+  } catch {
+    console.warn('[edgeone-build] ssr-node config.json not found, skip API route patch');
+    return;
+  }
+
+  let config;
+  try {
+    config = JSON.parse(raw);
+  } catch (error) {
+    console.warn('[edgeone-build] Failed to parse ssr-node config.json:', error);
+    return;
+  }
+
+  const originalRoutes = Array.isArray(config.routes) ? config.routes : [];
+  // Drop previous patches / weak API rules; keep other generated rules.
+  const routes = originalRoutes.filter(
+    (route) => !isApiRouteRule(route) && !isCatchAllRoute(route)
+  );
+
+  let filesystemIdx = routes.findIndex((route) => route && route.handle === 'filesystem');
+  if (filesystemIdx === -1) {
+    routes.push({ handle: 'filesystem' });
+    filesystemIdx = routes.length - 1;
+    console.log('[edgeone-build] Inserted missing { handle: "filesystem" } into ssr-node routes');
+  }
+
+  const before = routes.slice(0, filesystemIdx + 1);
+  const after = routes.slice(filesystemIdx + 1).filter((route) => !isCatchAllRoute(route));
+
+  // Official full-stack pattern: API + catch-all AFTER filesystem → Node SSR handler.
+  // Do not write private fields into config.json — EdgeOne may reject unknown keys.
+  const apiRoute = {
+    src: '^/api(?:/.*)?$',
+    dest: '/api',
+  };
+  const apiRouteWithCapture = {
+    src: '^/api/(.*)$',
+    dest: '/api/$1',
+  };
+  const catchAll = {
+    src: '/.*',
+  };
+
+  // Short-circuit /api BEFORE filesystem so static layer never owns the request.
+  // Avoids "static miss 404 status + SSR body" composites on some EdgeOne builds.
+  const apiBeforeFilesystem = {
+    src: '^/api(?:/.*)?$',
+    dest: '/api',
+  };
+
+  const preFilesystem = before.slice(0, -1).filter((route) => !isApiRouteRule(route));
+  const filesystemRule = before[before.length - 1];
+
+  config.version = config.version || 3;
+  config.routes = [
+    ...preFilesystem,
+    apiBeforeFilesystem,
+    filesystemRule,
+    apiRouteWithCapture,
+    apiRoute,
+    ...after,
+    catchAll,
+  ];
+
+  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  console.log(
+    '[edgeone-build] Patched ssr-node routes: /api forced before+after filesystem (fix API 404 status leak)'
+  );
+}
+
+/**
+ * Wrap ssr-node handler so Response.status is never dropped if the runtime
+ * re-constructs the response without status (defensive).
+ */
+function patchHandlerFile(handlerPath, code) {
+  const marker = '/* edgeone-api-status-guard */';
+  if (code.includes(marker)) {
+    console.log('[edgeone-build] ssr-node handler status guard already present');
+    return;
+  }
+
+  const guard = `
+${marker}
+function __edgeoneEnsureResponseStatus(response, fallbackStatus) {
+  if (!response) return response;
+  try {
+    const status = Number(response.status || fallbackStatus || 200);
+    if (status >= 100 && status <= 599 && response.status === status) {
+      return response;
+    }
+    if (typeof Response !== 'undefined' && (response instanceof Response || typeof response.headers?.get === 'function')) {
+      const headers = new Headers(response.headers || {});
+      return new Response(response.body, {
+        status: status >= 100 && status <= 599 ? status : 200,
+        statusText: response.statusText,
+        headers,
+      });
+    }
+  } catch (_) {
+    // ignore
+  }
+  return response;
+}
+
+function __edgeoneWrapHandler(fn) {
+  if (typeof fn !== 'function') return fn;
+  return async function __edgeonePatchedHandler(request, context) {
+    const response = await fn(request, context);
+    return __edgeoneEnsureResponseStatus(response, 200);
+  };
+}
+`;
+
+  let patched = code;
+  let applied = false;
+
+  if (/export\s+default\s+/.test(patched) && !applied) {
+    patched = `${guard}\n${patched.replace(
+      /export\s+default\s+/,
+      'const __edgeoneOriginalDefault = '
+    )}\nexport default __edgeoneWrapHandler(__edgeoneOriginalDefault);\n`;
+    applied = true;
+  }
+
+  if (!applied && /module\.exports\s*=/.test(patched)) {
+    patched = `${guard}\n${patched}\n;module.exports = __edgeoneWrapHandler(module.exports?.default || module.exports);\nif (module.exports && module.exports.default) { module.exports.default = __edgeoneWrapHandler(module.exports.default); }\n`;
+    applied = true;
+  }
+
+  if (!applied && /exports\.default\s*=/.test(patched)) {
+    patched = `${guard}\n${patched}\n;exports.default = __edgeoneWrapHandler(exports.default);\n`;
+    applied = true;
+  }
+
+  if (!applied) {
+    console.warn(
+      '[edgeone-build] Unable to wrap ssr-node handler export (unknown module shape); route patch still applied'
+    );
+    return;
+  }
+
+  writeFileSync(handlerPath, patched);
+  console.log(`[edgeone-build] Patched ssr-node handler status guard: ${handlerPath}`);
+}
+
+function patchSsrNodeHandlerStatus() {
+  const candidates = [
+    join(process.cwd(), '.edgeone', 'cloud-functions', 'ssr-node', 'handler.js'),
+    join(process.cwd(), '.edgeone', 'cloud-functions', 'ssr-node', 'index.js'),
+    join(process.cwd(), '.edgeone', 'cloud-functions', 'ssr-node', 'index.mjs'),
+    join(process.cwd(), '.edgeone', 'cloud-functions', 'ssr-node', 'handler.mjs'),
+  ];
+
+  for (const handlerPath of candidates) {
+    try {
+      const code = readFileSync(handlerPath, 'utf8');
+      patchHandlerFile(handlerPath, code);
+      return;
+    } catch {
+      // try next
+    }
+  }
+
+  console.warn('[edgeone-build] ssr-node handler not found, skip status patch');
+}
+
 const isInsideEdgeOneBuilder = process.env.NEXT_PRIVATE_STANDALONE === 'true';
 
 const command = isInsideEdgeOneBuilder
@@ -245,6 +461,8 @@ child.on('exit', (code, signal) => {
     }
 
     patchEdgeFunctionEnvInjection();
+    patchSsrNodeRoutes();
+    patchSsrNodeHandlerStatus();
 
     for (const envPath of [
       join(process.cwd(), '.edgeone', '.env'),

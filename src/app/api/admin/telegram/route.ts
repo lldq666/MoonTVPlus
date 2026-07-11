@@ -119,9 +119,10 @@ export async function POST(request: NextRequest) {
         ? overrideConfig.botToken
         : savedConfig.botToken;
 
+    const siteName = (await getConfig()).SiteConfig.SiteName || 'MoonTVPlus';
     await sendTelegramMessage(
       String(testChatId),
-      'MoonTVPlus Telegram Bot 测试消息发送成功。',
+      `${siteName} Telegram Bot 测试消息发送成功。`,
       undefined,
       {
         enabled: true,

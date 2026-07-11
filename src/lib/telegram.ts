@@ -355,12 +355,14 @@ export async function requestTelegramLoginConfirm(token: string, telegramUserId:
   const binding = await getTelegramBindingByTelegramUser(telegramUserId);
   if (!binding) throw new Error('当前 Telegram 账号尚未绑定站内账号');
 
+  const siteName = (await getConfig()).SiteConfig.SiteName || 'MoonTVPlus';
+
   session.status = 'awaiting_confirm';
   session.telegramUserId = telegramUserId;
   session.username = binding.username;
   await writeJson(loginSessionKey(token), session);
 
-  await sendTelegramMessage(binding.chatId, `确认登录 MoonTVPlus 账号：${binding.username}`, {
+  await sendTelegramMessage(binding.chatId, `确认登录 ${siteName} 账号：${binding.username}`, {
     inline_keyboard: [[
       { text: '确认登录', callback_data: `tg_login_confirm:${token}` },
       { text: '拒绝', callback_data: `tg_login_deny:${token}` },
@@ -623,9 +625,10 @@ function parseMessageText(update: any) {
   };
 }
 
-function buildTelegramHelpText(config: TelegramConfig) {
+async function buildTelegramHelpText(config: TelegramConfig) {
+  const siteName = (await getConfig()).SiteConfig.SiteName || 'MoonTVPlus';
   const commands: string[] = [
-    'MoonTVPlus Telegram Bot 已连接。',
+    `${siteName} Telegram Bot 已连接。`,
     '',
     '可用命令：',
     config.registrationEnabled ? '/register 用户名 密码 - 注册并绑定账号' : '',
@@ -640,7 +643,7 @@ export async function handleTelegramWebhookUpdate(update: any): Promise<void> {
   const parsed = parseMessageText(update);
   if (parsed) {
     if (/^\/start$/i.test(parsed.text)) {
-      await sendTelegramMessage(parsed.chatId, buildTelegramHelpText(await getTelegramConfig()));
+      await sendTelegramMessage(parsed.chatId, await buildTelegramHelpText(await getTelegramConfig()));
       return;
     }
 
@@ -697,11 +700,11 @@ export async function handleTelegramWebhookUpdate(update: any): Promise<void> {
     }
 
     if (/^\/help$/i.test(parsed.text)) {
-      await sendTelegramMessage(parsed.chatId, buildTelegramHelpText(await getTelegramConfig()));
+      await sendTelegramMessage(parsed.chatId, await buildTelegramHelpText(await getTelegramConfig()));
       return;
     }
 
-    await sendTelegramMessage(parsed.chatId, buildTelegramHelpText(await getTelegramConfig()));
+    await sendTelegramMessage(parsed.chatId, '未知指令，请发送 /help 查看可用命令。');
     return;
   }
 
