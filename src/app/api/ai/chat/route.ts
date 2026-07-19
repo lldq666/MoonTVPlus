@@ -293,16 +293,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await streamOpenAIChat(messages, {
+    const chatConfig = {
       apiKey: aiConfig.CustomApiKey,
       baseURL: aiConfig.CustomBaseURL,
       model: aiConfig.CustomModel || 'gpt-3.5-turbo',
       temperature,
       maxTokens,
-    }, enableStreaming);
+    };
 
-    // 7. 根据是否启用流式响应返回不同格式
-    if (enableStreaming) {
+    // 7. 调用模型生成回答。
+    // 部分模型/路由器（如 openrouter/free）不支持流式输出，
+    // 若流式请求失败则自动降级为非流式重试，提升兼容性。
+    let useStreaming = enableStreaming;
+    let result: ReadableStream | Response;
+    try {
+      result = await streamOpenAIChat(messages, chatConfig, useStreaming);
+    } catch (streamError) {
+      if (useStreaming) {
+        console.error(
+          '⚠️ 流式请求失败，自动降级为非流式重试:',
+          (streamError as Error).message
+        );
+        useStreaming = false;
+        result = await streamOpenAIChat(messages, chatConfig, false);
+      } else {
+        throw streamError;
+      }
+    }
+
+    // 8. 根据是否启用流式响应返回不同格式
+    if (useStreaming) {
       // 流式响应：转换为SSE格式并返回
       const sseStream = transformToSSE(result as ReadableStream, 'openai');
 
