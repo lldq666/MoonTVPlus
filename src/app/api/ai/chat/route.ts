@@ -13,7 +13,7 @@ import { hasFeaturePermission } from '@/lib/permissions';
 export const runtime = 'nodejs';
 
 interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
+  role: 'user' | 'assistant';
   content: string;
 }
 
@@ -53,14 +53,8 @@ async function streamOpenAIChat(
   });
 
   if (!response.ok) {
-    let detail = '';
-    try {
-      detail = (await response.text()).slice(0, 500);
-    } catch {
-      // 忽略读取响应体失败
-    }
     throw new Error(
-      `OpenAI API error: ${response.status} ${response.statusText} - ${detail}`
+      `OpenAI API error: ${response.status} ${response.statusText}`
     );
   }
 
@@ -281,23 +275,15 @@ export async function POST(request: NextRequest) {
       : orchestrationResult.systemPrompt;
 
     const messages: ChatMessage[] = [
-      { role: 'system', content: systemPrompt },
+      { role: 'user', content: systemPrompt },
       { role: 'assistant', content: '明白了，我会按照要求回答用户的问题。' },
       ...history,
       { role: 'user', content: message },
     ];
 
     // 6. 调用自定义API
-    // 温度限制在 [0, 2] 区间，避免部分模型因越界返回 400
-    const temperature = Math.min(
-      2,
-      Math.max(0, Number(aiConfig.Temperature ?? 0.7))
-    );
-    // 确保 max_tokens 为合法的正整数，避免非法值导致 400
-    let maxTokens = Math.floor(Number(aiConfig.MaxTokens ?? 1000));
-    if (!Number.isFinite(maxTokens) || maxTokens <= 0) {
-      maxTokens = 1000;
-    }
+    const temperature = aiConfig.Temperature ?? 0.7;
+    const maxTokens = aiConfig.MaxTokens ?? 1000;
     const enableStreaming = aiConfig.EnableStreaming !== false; // 默认启用流式响应
 
     if (!aiConfig.CustomApiKey || !aiConfig.CustomBaseURL) {
@@ -307,52 +293,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 模型优先级：已配置的聊天模型 > 决策模型（同一 endpoint，已验证可用）> 通用兜底
-    // 避免聊天模型为空时回退到自定义 endpoint 并不支持的 gpt-3.5-turbo 而触发 400
-    const resolvedModel =
-      aiConfig.CustomModel || aiConfig.DecisionCustomModel || 'gpt-3.5-turbo';
-
-    const chatConfig = {
+    const result = await streamOpenAIChat(messages, {
       apiKey: aiConfig.CustomApiKey,
       baseURL: aiConfig.CustomBaseURL,
-      model: resolvedModel,
+      model: aiConfig.CustomModel || 'gpt-3.5-turbo',
       temperature,
       maxTokens,
-    };
+    }, enableStreaming);
 
-    // 7. 调用模型生成回答。
-    // 部分模型/路由器（如 openrouter/free）不支持流式输出，
-    // 若流式请求失败则自动降级为非流式重试，提升兼容性。
-    let useStreaming = enableStreaming;
-    let result: ReadableStream | Response;
-    try {
-      result = await streamOpenAIChat(messages, chatConfig, useStreaming);
-    } catch (streamError) {
-      if (useStreaming) {
-        const errMsg = (streamError as Error).message;
-        // 仅当失败与“流式”或网络相关时才降级为非流式重试；
-        // 若是 400 参数错误（如模型不存在），重试非流式同样会失败，直接抛出更清晰。
-        const isStreamOrNetworkError =
-          /stream/i.test(errMsg) ||
-          /timeout/i.test(errMsg) ||
-          /network/i.test(errMsg) ||
-          /ECONN/i.test(errMsg) ||
-          /fetch failed/i.test(errMsg);
-        if (isStreamOrNetworkError) {
-          console.error('⚠️ 流式请求失败，自动降级为非流式重试:', errMsg);
-          useStreaming = false;
-          result = await streamOpenAIChat(messages, chatConfig, false);
-        } else {
-          console.error('❌ 流式请求失败且非流式相关问题，不再重试:', errMsg);
-          throw streamError;
-        }
-      } else {
-        throw streamError;
-      }
-    }
-
-    // 8. 根据是否启用流式响应返回不同格式
-    if (useStreaming) {
+    // 7. 根据是否启用流式响应返回不同格式
+    if (enableStreaming) {
       // 流式响应：转换为SSE格式并返回
       const sseStream = transformToSSE(result as ReadableStream, 'openai');
 
