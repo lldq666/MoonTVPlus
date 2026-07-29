@@ -310,6 +310,10 @@ export interface SearchResult {
   rating?: number; // 评分
   initialEpisodeIndex?: number; // 初始集数索引（用于小雅源从文件点击进入时指定集数）
   metadataSource?: 'folder' | 'nfo' | 'tmdb' | 'file'; // 元数据来源（用于小雅源判断是否保留fileName）
+  /** OpenList 路径元信息：是否启用 14 分钟播放 URL 续期 */
+  refresh14m?: boolean;
+  /** OpenList 路径元信息：分类 */
+  category?: string;
 }
 
 // 豆瓣数据结构

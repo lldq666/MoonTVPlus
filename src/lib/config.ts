@@ -328,6 +328,12 @@ async function getInitConfig(
       TurnstileSiteKey: '',
       TurnstileSecretKey: '',
       DefaultUserTags: [],
+      // 流量统计配置
+      AnalyticsEnabled: false,
+      AnalyticsProvider: 'umami',
+      AnalyticsScriptUrl: '',
+      AnalyticsWebsiteId: '',
+      AnalyticsCustomScript: '',
     },
     UserConfig: {
       Users: [],
@@ -353,6 +359,7 @@ async function getInitConfig(
       : Array.isArray(cfgFile.specialSourceApis)
       ? cfgFile.specialSourceApis
       : [],
+    ClientAdSourceApis: [],
   };
 
   // 用户信息已迁移到新版数据库，不再填充 UserConfig.Users
@@ -588,6 +595,22 @@ export function configSelfCheck(adminConfig: AdminConfig): AdminConfig {
   if (adminConfig.SiteConfig.DefaultUserTags === undefined) {
     adminConfig.SiteConfig.DefaultUserTags = [];
   }
+  // 流量统计配置补全
+  if (adminConfig.SiteConfig.AnalyticsEnabled === undefined) {
+    adminConfig.SiteConfig.AnalyticsEnabled = false;
+  }
+  if (adminConfig.SiteConfig.AnalyticsProvider === undefined) {
+    adminConfig.SiteConfig.AnalyticsProvider = 'umami';
+  }
+  if (adminConfig.SiteConfig.AnalyticsScriptUrl === undefined) {
+    adminConfig.SiteConfig.AnalyticsScriptUrl = '';
+  }
+  if (adminConfig.SiteConfig.AnalyticsWebsiteId === undefined) {
+    adminConfig.SiteConfig.AnalyticsWebsiteId = '';
+  }
+  if (adminConfig.SiteConfig.AnalyticsCustomScript === undefined) {
+    adminConfig.SiteConfig.AnalyticsCustomScript = '';
+  }
   if (!adminConfig.TelegramConfig) {
     adminConfig.TelegramConfig = {
       enabled: process.env.TELEGRAM_BOT_ENABLED === 'true' || Boolean(process.env.TELEGRAM_BOT_TOKEN),
@@ -652,6 +675,12 @@ export function configSelfCheck(adminConfig: AdminConfig): AdminConfig {
   ) {
     adminConfig.SpecialSourceApis = [];
   }
+  if (
+    !adminConfig.ClientAdSourceApis ||
+    !Array.isArray(adminConfig.ClientAdSourceApis)
+  ) {
+    adminConfig.ClientAdSourceApis = [];
+  }
   adminConfig.LiveRefreshIntervalHours = normalizeLiveRefreshIntervalHours(
     adminConfig.LiveRefreshIntervalHours
   );
@@ -679,6 +708,9 @@ export function configSelfCheck(adminConfig: AdminConfig): AdminConfig {
     if (adminConfig.OpenListConfig.OfflineDownloadPassword === undefined) {
       adminConfig.OpenListConfig.OfflineDownloadPassword = '';
     }
+    if (adminConfig.OpenListConfig.PathMeta === undefined) {
+      adminConfig.OpenListConfig.PathMeta = {};
+    }
   }
 
   // 用户信息已迁移到新版数据库
@@ -705,6 +737,9 @@ export function configSelfCheck(adminConfig: AdminConfig): AdminConfig {
   const validSourceKeys = new Set(adminConfig.SourceConfig.map((source) => source.key));
   adminConfig.SpecialSourceApis = Array.from(
     new Set((adminConfig.SpecialSourceApis || []).filter((key) => validSourceKeys.has(key)))
+  );
+  adminConfig.ClientAdSourceApis = Array.from(
+    new Set((adminConfig.ClientAdSourceApis || []).filter((key) => validSourceKeys.has(key)))
   );
 
   // 自定义分类去重

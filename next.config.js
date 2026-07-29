@@ -34,10 +34,31 @@ const createNextConfig = (phase) => {
   reactStrictMode: false,
   swcMinify: true,
 
+  // OpenNext/esbuild 使用 workerd condition 解析依赖。
+  // @libsql/* 等包有 workerd 专用入口（如 web.cjs），Next NFT 默认只追踪 node 入口，
+  // 导致 .open-next 里缺少 web.cjs 并报 Could not resolve "@libsql/isomorphic-ws"。
+  // 声明为 server external 后，OpenNext 会完整拷贝这些包并应用 workerd 导出。
+  // 参见: https://opennext.js.org/cloudflare/howtos/workerd
+  serverExternalPackages: [
+    '@libsql/client',
+    '@libsql/hrana-client',
+    '@libsql/isomorphic-ws',
+    '@libsql/isomorphic-fetch',
+    'libsql',
+  ],
+
   experimental: {
     instrumentationHook: process.env.NODE_ENV === 'production' && !isEdgeBuild,
     optimizePackageImports: optimizedPackageImports,
     webpackBuildWorker: !isEdgeBuild,
+    // Next 14.2 仍可能读取此字段；与 serverExternalPackages 保持一致
+    serverComponentsExternalPackages: [
+      '@libsql/client',
+      '@libsql/hrana-client',
+      '@libsql/isomorphic-ws',
+      '@libsql/isomorphic-fetch',
+      'libsql',
+    ],
   },
 
   // Uncoment to add domain whitelist
@@ -104,6 +125,9 @@ const createNextConfig = (phase) => {
             'redis',
             '@vercel/postgres',
             'pg',
+            'libsql',
+            '@libsql/isomorphic-fetch',
+            '@libsql/isomorphic-ws',
           ].map((pkg) => [
             pkg,
             path.resolve(
@@ -136,13 +160,14 @@ const createNextConfig = (phase) => {
       });
     }
 
-    // Exclude better-sqlite3, D1, and Postgres modules from client-side bundle
+    // Exclude better-sqlite3, D1, Postgres, and Turso modules from client-side bundle
     if (!isServer) {
       config.externals = config.externals || [];
       config.externals.push({
         'better-sqlite3': 'commonjs better-sqlite3',
         '@vercel/postgres': 'commonjs @vercel/postgres',
         'pg': 'commonjs pg',
+        '@libsql/client': 'commonjs @libsql/client',
       });
 
       config.resolve.alias = {
@@ -152,6 +177,7 @@ const createNextConfig = (phase) => {
         '@/lib/d1-adapter': false,
         '@/lib/postgres.db': false,
         '@/lib/postgres-adapter': false,
+        '@/lib/turso-adapter': false,
       };
     }
 

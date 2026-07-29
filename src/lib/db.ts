@@ -17,7 +17,7 @@ import {
   SkipConfig,
 } from './types';
 
-// storage type 常量: 'localstorage' | 'redis' | 'upstash' | 'kvrocks' | 'd1' | 'postgres'，默认 'localstorage'
+// storage type 常量: 'localstorage' | 'redis' | 'upstash' | 'kvrocks' | 'd1' | 'postgres' | 'turso'，默认 'localstorage'
 const IS_CLOUDFLARE_BUILD =
   process.env.CF_PAGES === '1' || process.env.BUILD_TARGET === 'cloudflare';
 const STORAGE_TYPE =
@@ -28,6 +28,7 @@ const STORAGE_TYPE =
     | 'kvrocks'
     | 'd1'
     | 'postgres'
+    | 'turso'
     | undefined) || 'localstorage';
 
 // 创建存储实例
@@ -70,6 +71,15 @@ function createStorage(): IStorage {
       // 动态导入 PostgresStorage 以避免客户端打包
       const { PostgresStorage } = require('./postgres.db');
       return new PostgresStorage(postgresAdapter);
+    case 'turso':
+      // TursoStorage 只能在服务端使用，客户端会报错
+      if (typeof window !== 'undefined') {
+        throw new Error('TursoStorage can only be used on the server side');
+      }
+      const tursoAdapter = getTursoAdapter();
+      // 复用 D1Storage（Turso 基于 libSQL/SQLite，SQL 语法完全兼容）
+      const { D1Storage: TursoD1Storage } = require('./d1.db');
+      return new TursoD1Storage(tursoAdapter);
     case 'localstorage':
     default:
       return null as unknown as IStorage;
@@ -87,6 +97,29 @@ function getPostgresAdapter(): any {
   console.log('Using Vercel Postgres database');
 
   return new PostgresAdapter();
+}
+
+/**
+ * 获取 Turso 适配器
+ * 使用 @libsql/client 连接 Turso (libSQL) 远程数据库
+ * 适用于 EdgeOne Pages 等无内置数据库的边缘平台
+ */
+function getTursoAdapter(): any {
+  // 动态导入适配器以避免客户端打包
+  const { TursoAdapter } = require('./turso-adapter');
+
+  const tursoUrl = process.env.TURSO_URL;
+  const tursoToken = process.env.TURSO_TOKEN;
+
+  if (!tursoUrl || !tursoToken) {
+    throw new Error(
+      'TURSO_URL and TURSO_TOKEN env variables must be set for Turso storage'
+    );
+  }
+
+  console.log('Using Turso (libSQL) database');
+
+  return new TursoAdapter(tursoUrl, tursoToken);
 }
 
 /**

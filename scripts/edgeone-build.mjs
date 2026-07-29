@@ -42,6 +42,8 @@ const runtimeEnvKeys = [
   'NEXT_PUBLIC_STORAGE_TYPE',
   'UPSTASH_URL',
   'UPSTASH_TOKEN',
+  'TURSO_URL',
+  'TURSO_TOKEN',
   'TMDB_API_KEY',
   'TMDB_IMAGE_DOMAIN',
   'NEXT_PUBLIC_SITE_NAME',
@@ -80,22 +82,168 @@ const runtimeEnvKeys = [
   'NEXT_PUBLIC_BASE_PATH',
 ];
 
-const edgeOneMiddlewareSkipPaths = [
-  '/login',
-  '/register',
-  '/oidc-register',
-  '/qr-login',
-  '/warning',
-  '/tv/login',
-  '/api/login',
-  '/api/register',
-  '/api/logout',
-  '/api/auth/oidc',
-  '/api/auth/qr',
-  '/api/auth/refresh',
-  '/api/server-config',
-  '/api/tvbox/subscribe',
-];
+/**
+ * Read Next.js middleware matcher sources (originalSource strings).
+ * Prefer build manifest, then compiled edge function, then source middleware.ts.
+ */
+function getMiddlewareMatcherSources() {
+  const sources = [];
+
+  const manifestPath = join(process.cwd(), '.next', 'server', 'middleware-manifest.json');
+  try {
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    const middlewareEntries = manifest?.middleware || {};
+    for (const entry of Object.values(middlewareEntries)) {
+      for (const matcher of entry?.matchers || []) {
+        if (typeof matcher?.originalSource === 'string' && matcher.originalSource) {
+          sources.push(matcher.originalSource);
+        } else if (typeof matcher?.regexp === 'string' && matcher.regexp) {
+          sources.push(matcher.regexp);
+        }
+      }
+    }
+    if (sources.length > 0) {
+      return [...new Set(sources)];
+    }
+  } catch {
+    // fall through
+  }
+
+  const edgeFunctionPath = join(process.cwd(), '.edgeone', 'edge-functions', 'index.js');
+  try {
+    const code = readFileSync(edgeFunctionPath, 'utf8');
+    // compiled form: matcher:["/((?!...).*)"] or matcher:["..."]
+    const matcherArrayMatch = code.match(/matcher:\s*(\[(?:[^\[\]"']|"[^"]*"|'[^']*')*\])/);
+    if (matcherArrayMatch) {
+      try {
+        const parsed = JSON.parse(matcherArrayMatch[1].replace(/'/g, '"'));
+        if (Array.isArray(parsed)) {
+          for (const item of parsed) {
+            if (typeof item === 'string' && item) {
+              sources.push(item);
+            }
+          }
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+    if (sources.length > 0) {
+      return [...new Set(sources)];
+    }
+  } catch {
+    // fall through
+  }
+
+  const middlewareSourcePath = join(process.cwd(), 'src', 'middleware.ts');
+  try {
+    const source = readFileSync(middlewareSourcePath, 'utf8');
+    // export const config = { matcher: [ '...' ] } or matcher: '...'
+    const blockMatch = source.match(
+      /export\s+const\s+config\s*=\s*\{[\s\S]*?matcher\s*:\s*(\[[\s\S]*?\]|['"`][^'"`]+['"`])/
+    );
+    if (blockMatch) {
+      const raw = blockMatch[1].trim();
+      if (raw.startsWith('[')) {
+        const stringLiterals = [...raw.matchAll(/['"`]([^'"`]+)['"`]/g)].map((m) => m[1]);
+        sources.push(...stringLiterals);
+      } else {
+        const single = raw.slice(1, -1);
+        if (single) {
+          sources.push(single);
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return [...new Set(sources.filter(Boolean))];
+}
+
+/**
+ * Convert Next.js middleware matcher originalSource exclusions into path prefixes.
+ * Supports the common form: /((?!a|b|c/).*)
+ */
+function extractSkipPathsFromMatcherSource(matcherSource) {
+  if (typeof matcherSource !== 'string' || !matcherSource) {
+    return [];
+  }
+
+  const skipPaths = new Set();
+
+  // Negative-lookahead exclusion list inside /((?!... ).*)
+  const negativeLookahead = matcherSource.match(/\(\?\!([^)]+)\)/);
+  if (negativeLookahead) {
+    for (const part of negativeLookahead[1].split('|')) {
+      const token = part.trim();
+      if (!token) {
+        continue;
+      }
+      // Keep trailing slash semantics (api/cron/, tvbox/) for prefix matching.
+      const normalized = token.startsWith('/') ? token : `/${token}`;
+      skipPaths.add(normalized);
+    }
+  }
+
+  return [...skipPaths];
+}
+
+function resolveEdgeOneMiddlewareSkipPaths() {
+  const matcherSources = getMiddlewareMatcherSources();
+  const skipPaths = new Set();
+
+  for (const source of matcherSources) {
+    for (const path of extractSkipPathsFromMatcherSource(source)) {
+      skipPaths.add(path);
+    }
+  }
+
+  const resolved = [...skipPaths].sort((a, b) => a.localeCompare(b));
+  if (resolved.length === 0) {
+    console.warn(
+      '[edgeone-build] Unable to derive middleware skip paths from matcher; edge function will rely on compiled config.matcher only'
+    );
+  } else {
+    console.log(
+      `[edgeone-build] Derived ${resolved.length} middleware skip path(s) from matcher: ${resolved.join(', ')}`
+    );
+  }
+  return resolved;
+}
+
+function isNextStyleComplexMatcher(source) {
+  return (
+    typeof source === 'string' &&
+    (source.includes('(?') ||
+      source.includes('[^') ||
+      source.includes('.*') ||
+      source.includes('|') ||
+      source.endsWith('$'))
+  );
+}
+
+/**
+ * EdgeOne platform-level middleware.matcher uses path-to-regexp style sources
+ * (e.g. /:path*, /api/:path*). Next.js negative-lookahead matchers are only safe
+ * inside the compiled edge function (matchesPath). For complex Next matchers we
+ * keep a catch-all outer intercept and rely on runtime matcher + derived skip paths.
+ */
+function resolveEdgeOneMiddlewareMatchers() {
+  const matcherSources = getMiddlewareMatcherSources();
+  if (matcherSources.length === 0) {
+    return [{ source: '/:path*' }];
+  }
+
+  if (matcherSources.some((source) => isNextStyleComplexMatcher(source))) {
+    console.log(
+      '[edgeone-build] Next.js complex middleware matcher detected; edge-functions config keeps /:path* and enforces exclusions at runtime'
+    );
+    return [{ source: '/:path*' }];
+  }
+
+  return matcherSources.map((source) => ({ source }));
+}
 
 function getRuntimeEnvLiteral() {
   const env = {};
@@ -170,6 +318,16 @@ function replaceEnvLiterals(code, envLiteral) {
   return output;
 }
 
+function buildMatcherFallbackSnippet(skipPaths) {
+  const matcherFallbackMarker = '/* edgeone-middleware-matcher-fallback */';
+  // Mirrors Next negative-lookahead tokens as pathname prefixes (e.g. /login, /api/cron/).
+  return `${matcherFallbackMarker}
+  const edgeOneMiddlewareSkipPaths = ${JSON.stringify(skipPaths)};
+  if (edgeOneMiddlewareSkipPaths.some((path) => pathname === path || pathname.startsWith(path))) {
+    return null;
+  }`;
+}
+
 function patchEdgeFunctionEnvInjection() {
   const edgeFunctionPath = join(process.cwd(), '.edgeone', 'edge-functions', 'index.js');
   let code;
@@ -181,6 +339,7 @@ function patchEdgeFunctionEnvInjection() {
 
   const marker = '/* edgeone-process-env-injected */';
   const envLiteral = getRuntimeEnvLiteral();
+  const edgeOneMiddlewareSkipPaths = resolveEdgeOneMiddlewareSkipPaths();
 
   code = replaceEnvLiterals(code, envLiteral);
 
@@ -197,7 +356,9 @@ function patchEdgeFunctionEnvInjection() {
   const middlewareSignature = 'async function executeMiddleware({request}) {';
   const middlewareMarker = '/* edgeone-middleware-env-injected */';
   if (!code.includes(middlewareMarker) && !code.includes(middlewareSignature)) {
-    console.warn('[edgeone-build] Unable to patch middleware env injection: target not found');
+    if (!code.includes('async function executeMiddleware({request, env})')) {
+      console.warn('[edgeone-build] Unable to patch middleware env injection: target not found');
+    }
   } else if (!code.includes(middlewareMarker)) {
     code = code.replace(
       middlewareSignature,
@@ -209,17 +370,59 @@ function patchEdgeFunctionEnvInjection() {
   const matcherFallbackTarget = `  if (!matchesPath(pathname, config.matcher)) {
     return null;
   }`;
-  if (!code.includes(matcherFallbackMarker) && !code.includes(matcherFallbackTarget)) {
-    console.warn('[edgeone-build] Unable to patch middleware matcher fallback: target not found');
+  const fallbackSnippet = buildMatcherFallbackSnippet(edgeOneMiddlewareSkipPaths);
+
+  // Replace an existing dynamic/static fallback block so rebuilds stay in sync with middleware.
+  const existingFallbackRe =
+    /\/\* edgeone-middleware-matcher-fallback \*\/[\s\S]*?if \(edgeOneMiddlewareSkipPaths\.some\([\s\S]*?\) \{\s*return null;\s*\}/;
+
+  if (existingFallbackRe.test(code)) {
+    code = code.replace(existingFallbackRe, fallbackSnippet);
+  } else if (code.includes(matcherFallbackTarget)) {
+    code = code.replace(matcherFallbackTarget, `${matcherFallbackTarget}\n\n  ${fallbackSnippet}`);
   } else if (!code.includes(matcherFallbackMarker)) {
-    code = code.replace(
-      matcherFallbackTarget,
-      `${matcherFallbackTarget}\n\n  ${matcherFallbackMarker}\n  const edgeOneMiddlewareSkipPaths = ${JSON.stringify(edgeOneMiddlewareSkipPaths)};\n  if (edgeOneMiddlewareSkipPaths.some((path) => pathname.startsWith(path))) {\n    return null;\n  }`
-    );
+    console.warn('[edgeone-build] Unable to patch middleware matcher fallback: target not found');
   }
 
   writeFileSync(edgeFunctionPath, code);
   console.log('[edgeone-build] Patched edge function process.env injection');
+}
+
+/**
+ * Write EdgeOne edge-function route interception matcher from Next.js middleware config.
+ * EdgeOne outer matcher decides when the edge function is invoked; keep it aligned with
+ * middleware originalSource so exclusions are not a hardcoded catch-all forever.
+ */
+function patchEdgeFunctionMiddlewareConfig() {
+  const configPath = join(process.cwd(), '.edgeone', 'edge-functions', 'config.json');
+  let raw;
+  try {
+    raw = readFileSync(configPath, 'utf8');
+  } catch {
+    console.warn('[edgeone-build] edge-functions config.json not found, skip middleware matcher patch');
+    return;
+  }
+
+  let config;
+  try {
+    config = JSON.parse(raw);
+  } catch (error) {
+    console.warn('[edgeone-build] Failed to parse edge-functions config.json:', error);
+    return;
+  }
+
+  const matchers = resolveEdgeOneMiddlewareMatchers();
+  config.routes = Array.isArray(config.routes) ? config.routes : [];
+  config.middleware = {
+    ...(config.middleware && typeof config.middleware === 'object' ? config.middleware : {}),
+    runtime: config.middleware?.runtime || 'edge',
+    matcher: matchers,
+  };
+
+  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  console.log(
+    `[edgeone-build] Patched edge-functions middleware matcher from Next.js middleware (${matchers.length} rule(s))`
+  );
 }
 
 /**
@@ -461,6 +664,7 @@ child.on('exit', (code, signal) => {
     }
 
     patchEdgeFunctionEnvInjection();
+    patchEdgeFunctionMiddlewareConfig();
     patchSsrNodeRoutes();
     patchSsrNodeHandlerStatus();
 

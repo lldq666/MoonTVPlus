@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 import {
   createTelegramLoginSession,
@@ -9,7 +9,7 @@ import {
 
 export const runtime = 'nodejs';
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   const config = await getTelegramConfig();
   const problems = getTelegramConfigProblems(config, 'login');
   if (problems.length > 0) {
@@ -25,7 +25,8 @@ export async function POST() {
     }, { status: 400 });
   }
 
-  const session = await createTelegramLoginSession();
+  const userAgent = request.headers.get('user-agent') || '';
+  const session = await createTelegramLoginSession(userAgent);
   const botUsername = config.botUsername.replace(/^@/, '');
   return NextResponse.json({
     token: session.token,

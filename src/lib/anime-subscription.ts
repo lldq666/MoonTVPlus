@@ -58,15 +58,37 @@ export function extractEpisode(title: string): number | null {
 }
 
 /**
- * 检查标题是否匹配过滤条件
+ * 解析逗号分隔关键词（兼容中文逗号）
+ */
+function parseKeywords(text: string): string[] {
+  return text
+    .replace(/，/g, ',')
+    .split(',')
+    .map((k) => k.trim())
+    .filter(Boolean);
+}
+
+/**
+ * 检查标题是否匹配过滤条件（包含关键词，AND：必须全部命中）
  */
 export function matchesFilter(title: string, filterText: string): boolean {
   if (!filterText) return true;
 
   // 支持多个关键词，用逗号分隔，必须全部匹配
-  const keywords = filterText.split(',').map((k) => k.trim()).filter(Boolean);
+  const keywords = parseKeywords(filterText);
 
   return keywords.every((keyword) => title.includes(keyword));
+}
+
+/**
+ * 检查标题是否命中排除关键词（OR：任一命中即排除）
+ */
+export function matchesExclude(title: string, excludeText?: string): boolean {
+  if (!excludeText) return false;
+
+  const keywords = parseKeywords(excludeText);
+
+  return keywords.some((keyword) => title.includes(keyword));
 }
 
 /**
@@ -318,9 +340,10 @@ export async function checkSubscription(subscription: AnimeSubscription) {
   // 1. 搜索资源
   const results = await searchACG(subscription.title, subscription.source);
 
-  // 2. 过滤并解析集数
+  // 2. 过滤并解析集数（包含关键词 AND，排除关键词 OR）
   const newEpisodes = results
     .filter((item: any) => matchesFilter(item.title, subscription.filterText))
+    .filter((item: any) => !matchesExclude(item.title, subscription.excludeText))
     .map((item: any) => ({
       episode: extractEpisode(item.title),
       ...item,

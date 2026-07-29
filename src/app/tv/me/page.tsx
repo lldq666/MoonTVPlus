@@ -311,11 +311,17 @@ export default function TVMePage() {
               </div>
 
               {localRemoteUrl && (
-                <div className='shrink-0 rounded-[32px] border border-white/15 bg-white p-4 shadow-2xl shadow-black/40'>
+                <div
+                  tabIndex={0}
+                  role='img'
+                  aria-label='局域网遥控地址二维码，手机扫码打开遥控器'
+                  className='tv-focusable tv-focusable-light shrink-0 rounded-[32px] border border-white/15 bg-white p-4 shadow-2xl shadow-black/40 outline-none'
+                >
                   <img
                     src={`/api/auth/qr/image?data=${encodeURIComponent(localRemoteUrl)}`}
                     alt='局域网遥控地址二维码'
-                    className='h-64 w-64 rounded-2xl'
+                    className='pointer-events-none h-64 w-64 rounded-2xl'
+                    draggable={false}
                   />
                   <div className='mt-3 text-center text-base font-black text-slate-950'>
                     手机扫码打开遥控器

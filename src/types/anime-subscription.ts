@@ -2,6 +2,8 @@ export interface AnimeSubscription {
   id: string;
   title: string;
   filterText: string;
+  /** 排除关键词，逗号分隔；标题包含任一关键词则跳过，例如：先行版,预告 */
+  excludeText?: string;
   source: 'acgrip' | 'mikan' | 'dmhy' | 'nyaa';
   enabled: boolean;
   lastCheckTime: number;

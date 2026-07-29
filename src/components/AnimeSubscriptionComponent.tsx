@@ -179,6 +179,7 @@ export default function AnimeSubscriptionComponent({
   const [formData, setFormData] = useState({
     title: '',
     filterText: '',
+    excludeText: '',
     source: 'mikan' as 'acgrip' | 'mikan' | 'dmhy' | 'nyaa',
     lastEpisode: 0,
     enabled: true,
@@ -198,6 +199,7 @@ export default function AnimeSubscriptionComponent({
     setFormData({
       title: '',
       filterText: '',
+      excludeText: '',
       source: 'mikan',
       lastEpisode: 0,
       enabled: true,
@@ -273,6 +275,7 @@ export default function AnimeSubscriptionComponent({
     setFormData({
       title: sub.title,
       filterText: sub.filterText,
+      excludeText: sub.excludeText || '',
       source: sub.source,
       lastEpisode: sub.lastEpisode,
       enabled: sub.enabled,
@@ -489,6 +492,7 @@ export default function AnimeSubscriptionComponent({
             <p>• 定时任务会自动检查订阅更新</p>
             <p>• 下载路径：OpenList离线下载根目录/番剧名称/</p>
             <p>• 过滤关键词支持多个，用逗号分隔，只会下载包含这些关键字的资源，可以用来过滤字幕组或是字幕种类</p>
+            <p>• 排除关键词支持多个，用逗号分隔，标题包含任一关键词则跳过，例如：先行版,预告,PV</p>
             <p>• 当前集数：已看到第几集，只下载更新的集数</p>
           </div>
         </div>
@@ -534,9 +538,24 @@ export default function AnimeSubscriptionComponent({
                   className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-green-500'
                 />
                 <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
-                  多个关键词用逗号分隔
+                  多个关键词用逗号分隔，需全部包含
                 </p>
               </div>
+            </div>
+            <div>
+              <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1'>
+                排除关键词
+              </label>
+              <input
+                type='text'
+                value={formData.excludeText}
+                onChange={(e) => setFormData({ ...formData, excludeText: e.target.value })}
+                placeholder='先行版,预告,PV'
+                className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-green-500'
+              />
+              <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+                可选；多个关键词用逗号分隔，标题包含任一则跳过
+              </p>
             </div>
             <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
               <div>
@@ -625,6 +644,7 @@ export default function AnimeSubscriptionComponent({
                   </div>
                   <div className='text-sm text-gray-600 dark:text-gray-400 space-y-1'>
                     <p>过滤条件：{sub.filterText}</p>
+                    {sub.excludeText ? <p>排除条件：{sub.excludeText}</p> : null}
                     <p>当前集数：第 {sub.lastEpisode} 集</p>
                     <p>上次检查：{formatTime(sub.lastCheckTime)}</p>
                   </div>
@@ -687,6 +707,9 @@ export default function AnimeSubscriptionComponent({
                 </div>
                 <div className='text-sm text-gray-600 dark:text-gray-400 space-y-1'>
                   <p className='break-all'>过滤：{sub.filterText}</p>
+                  {sub.excludeText ? (
+                    <p className='break-all'>排除：{sub.excludeText}</p>
+                  ) : null}
                   <p>集数：第 {sub.lastEpisode} 集 · {formatTime(sub.lastCheckTime)}</p>
                 </div>
                 <div className='flex items-center gap-2 pt-1'>
