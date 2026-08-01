@@ -23,6 +23,7 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 
+import { isAnimeCategoryText } from '@/lib/anime-keyword-expr';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 import {
   addSearchHistory,
@@ -2109,6 +2110,14 @@ function SearchPageClient() {
                                         : ''
                                     }
                                     type={type}
+                                    isAnime={group.some((g) =>
+                                      isAnimeCategoryText(g.type_name, g.class)
+                                    )}
+                                    typeName={
+                                      group.find((g) => g.type_name || g.class)
+                                        ?.type_name ||
+                                      group.find((g) => g.class)?.class
+                                    }
                                   />
                                 </div>
                               );
@@ -2116,6 +2125,10 @@ function SearchPageClient() {
                           : filteredAllResults.map((item) => {
                               const type =
                                 item.episodes.length > 1 ? 'tv' : 'movie';
+                              const itemIsAnime = isAnimeCategoryText(
+                                item.type_name,
+                                item.class
+                              );
 
                               if (resultDisplayMode === 'list') {
                                 return renderListItem({
@@ -2162,6 +2175,8 @@ function SearchPageClient() {
                                     year={item.year}
                                     from='search'
                                     type={type}
+                                    isAnime={itemIsAnime}
+                                    typeName={item.type_name || item.class}
                                   />
                                 </div>
                               );

@@ -1,5 +1,7 @@
 // AI评论生成核心逻辑
 
+import { normalizeApiBaseUrl } from '@/lib/url';
+
 export interface AIComment {
   id: string;
   userName: string;
@@ -164,7 +166,8 @@ export async function generateAIComments(
     const prompt = buildCommentPrompt(movieName, movieInfo, searchResults, count);
 
     // 3. 调用AI API
-    const response = await fetch(`${aiConfig.CustomBaseURL}/chat/completions`, {
+    const baseURL = normalizeApiBaseUrl(aiConfig.CustomBaseURL);
+    const response = await fetch(`${baseURL}/chat/completions`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${aiConfig.CustomApiKey}`,

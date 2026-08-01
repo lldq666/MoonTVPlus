@@ -11,6 +11,37 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: "224.1.1",
+    date: "2026-07-31",
+    added: [
+      // 无新增内容
+    ],
+    changed: [
+      // 无变更内容
+    ],
+    fixed: [
+    "修复tv模式登录失效跳转/login页面而非/tv/login页面"
+    ]
+  },
+  {
+    version: "224.1.0",
+    date: "2026-07-31",
+    added: [
+    "生态应用增加moontvplus浏览器插件",
+    "网盘源新增集数长按或右键显示原名",
+    "增强追番订阅：关键词表达式、字幕组快捷、右键添加与缺集补搜",
+    "新增磁链测活功能"
+    ],
+    changed: [
+    "API Base URL保存与请求时去除末尾斜杠",
+    "VideoCard操作菜单限制高度并可滑动"
+    ],
+    fixed: [
+    "修复VideoCard来源数量浮层左上角被裁切，并阻止长按同时弹出操作菜单",
+    "修复OpenList多根路径扫描进度未汇总"
+    ]
+  },
+  {
     version: "224.0.0",
     date: "2026-07-21",
     added: [

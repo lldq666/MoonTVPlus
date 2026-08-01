@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, no-console, @typescript-eslint/no-non-null-assertion */
 
 import { db } from '@/lib/db';
+import { normalizeApiBaseUrl } from '@/lib/url';
 
 import { AdminConfig } from './admin.types';
 
@@ -1046,6 +1047,100 @@ export function configSelfCheck(adminConfig: AdminConfig): AdminConfig {
       adminConfig.OPDSConfig.CacheTTL = 10 * 60 * 1000;
     }
   }
+
+  // API Base URL 统一去尾斜杠，避免拼接路径时出现 //
+  const site = adminConfig.SiteConfig;
+  if (site) {
+    site.DoubanProxy = normalizeApiBaseUrl(site.DoubanProxy);
+    site.DoubanImageProxy = normalizeApiBaseUrl(site.DoubanImageProxy);
+    site.DanmakuApiBase = normalizeApiBaseUrl(site.DanmakuApiBase);
+    site.TMDBProxy = normalizeApiBaseUrl(site.TMDBProxy);
+    site.TMDBReverseProxy = normalizeApiBaseUrl(site.TMDBReverseProxy);
+    site.BangumiApiBaseUrl = normalizeApiBaseUrl(site.BangumiApiBaseUrl);
+    site.BangumiImageBaseUrl = normalizeApiBaseUrl(site.BangumiImageBaseUrl);
+    site.BangumiProxy = normalizeApiBaseUrl(site.BangumiProxy);
+    site.PansouApiUrl = normalizeApiBaseUrl(site.PansouApiUrl);
+    site.MagnetProxy = normalizeApiBaseUrl(site.MagnetProxy);
+    site.MagnetMikanReverseProxy = normalizeApiBaseUrl(
+      site.MagnetMikanReverseProxy
+    );
+    site.MagnetDmhyReverseProxy = normalizeApiBaseUrl(
+      site.MagnetDmhyReverseProxy
+    );
+    site.MagnetAcgripReverseProxy = normalizeApiBaseUrl(
+      site.MagnetAcgripReverseProxy
+    );
+    site.MagnetNyaaReverseProxy = normalizeApiBaseUrl(
+      site.MagnetNyaaReverseProxy
+    );
+    site.OIDCIssuer = normalizeApiBaseUrl(site.OIDCIssuer);
+  }
+
+  if (adminConfig.OpenListConfig) {
+    adminConfig.OpenListConfig.URL = normalizeApiBaseUrl(
+      adminConfig.OpenListConfig.URL
+    );
+    adminConfig.OpenListConfig.OfflineDownloadURL = normalizeApiBaseUrl(
+      adminConfig.OpenListConfig.OfflineDownloadURL
+    );
+  }
+
+  if (adminConfig.MusicConfig) {
+    adminConfig.MusicConfig.BaseUrl = normalizeApiBaseUrl(
+      adminConfig.MusicConfig.BaseUrl
+    );
+  }
+
+  if (adminConfig.XiaoyaConfig) {
+    adminConfig.XiaoyaConfig.ServerURL = normalizeApiBaseUrl(
+      adminConfig.XiaoyaConfig.ServerURL
+    );
+  }
+
+  if (adminConfig.SuwayomiConfig) {
+    adminConfig.SuwayomiConfig.ServerURL = normalizeApiBaseUrl(
+      adminConfig.SuwayomiConfig.ServerURL
+    );
+  }
+
+  if (adminConfig.EmbyConfig) {
+    if (adminConfig.EmbyConfig.ServerURL) {
+      adminConfig.EmbyConfig.ServerURL = normalizeApiBaseUrl(
+        adminConfig.EmbyConfig.ServerURL
+      );
+    }
+    if (Array.isArray(adminConfig.EmbyConfig.Sources)) {
+      adminConfig.EmbyConfig.Sources = adminConfig.EmbyConfig.Sources.map(
+        (source) => ({
+          ...source,
+          ServerURL: normalizeApiBaseUrl(source.ServerURL),
+        })
+      );
+    }
+  }
+
+  if (adminConfig.AIConfig) {
+    adminConfig.AIConfig.OpenAIBaseURL = normalizeApiBaseUrl(
+      adminConfig.AIConfig.OpenAIBaseURL
+    );
+    adminConfig.AIConfig.CustomBaseURL = normalizeApiBaseUrl(
+      adminConfig.AIConfig.CustomBaseURL
+    );
+    adminConfig.AIConfig.DecisionOpenAIBaseURL = normalizeApiBaseUrl(
+      adminConfig.AIConfig.DecisionOpenAIBaseURL
+    );
+    adminConfig.AIConfig.DecisionCustomBaseURL = normalizeApiBaseUrl(
+      adminConfig.AIConfig.DecisionCustomBaseURL
+    );
+  }
+
+  if (adminConfig.TelegramConfig) {
+    adminConfig.TelegramConfig.apiBaseUrl = normalizeApiBaseUrl(
+      adminConfig.TelegramConfig.apiBaseUrl
+    );
+  }
+
+  // 注意：OPDS source.url 是完整目录 URL，保留末尾 / 以便相对路径解析
 
   return adminConfig;
 }

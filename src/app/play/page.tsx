@@ -6,6 +6,7 @@ import { AlertCircle, Cloud, Heart, Keyboard, Loader2, Router, Sparkles, X } fro
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
+import { isAnimeCategoryText } from '@/lib/anime-keyword-expr';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 import {
   clearDanmakuCacheByTitle,
@@ -738,6 +739,33 @@ function PlayPageClient() {
       source.startsWith('emby_') ||
       source.startsWith('script:')
     );
+  };
+
+  /** 私人影库/网盘类源：配合 moontvplus-extension 跨域媒体模块，供 Anime4K 等读帧 */
+  const needsPrivateSourceCrossOrigin = (source?: string | null) => {
+    if (!source) return false;
+    return (
+      source === 'openlist' ||
+      source === 'xiaoya' ||
+      source === 'emby' ||
+      source.startsWith('emby_') ||
+      isNetdiskSource(source)
+    );
+  };
+
+  const applyVideoCrossOrigin = (
+    video: HTMLVideoElement | null,
+    source?: string | null
+  ) => {
+    if (!video) return;
+    if (needsPrivateSourceCrossOrigin(source ?? currentSourceRef.current)) {
+      if (video.crossOrigin !== 'anonymous') {
+        video.crossOrigin = 'anonymous';
+      }
+    } else if (video.crossOrigin) {
+      // 切回普通源时去掉，避免无 CORS 的 CDN 在 CORS 模式下播挂
+      video.crossOrigin = null;
+    }
   };
 
   const isM3u8LikeUrl = (url?: string) => {
@@ -3784,6 +3812,9 @@ function PlayPageClient() {
     // 使用 property 方式也设置一次，确保兼容性
     (video as any).playsInline = true;
     (video as any).webkitPlaysInline = true;
+
+    // openlist/emby/xiaoya/netdisk：CORS 模式加载，需配套「moontvplus 扩展」注入 ACAO 后 Anime4K 才能读帧
+    applyVideoCrossOrigin(video, currentSourceRef.current);
   };
 
   // Wake Lock 相关函数
@@ -6580,6 +6611,10 @@ function PlayPageClient() {
         total_time: Math.floor(duration),
         save_time: Date.now(),
         search_title: searchTitle,
+        is_anime: isAnimeCategoryText(
+          detailRef.current?.type_name,
+          detailRef.current?.class
+        ),
       });
 
       lastSavedPlayTimeRef.current = playTime;
@@ -6833,6 +6868,13 @@ function PlayPageClient() {
       } else {
         artPlayerRef.current.option.type = '';
       }
+      // switch 前先对齐 crossOrigin，避免私人影库直链以非 CORS 模式缓存后无法超分
+      if (artPlayerRef.current?.video) {
+        applyVideoCrossOrigin(
+          artPlayerRef.current.video as HTMLVideoElement,
+          currentSourceRef.current
+        );
+      }
       artPlayerRef.current.switch = videoUrl;
       artPlayerRef.current.title = `${videoTitle} - ${playerEpisodeLabel}`;
       artPlayerRef.current.poster = videoCover;
@@ -7073,6 +7115,10 @@ function PlayPageClient() {
             playsInline: true,
             'webkit-playsinline': 'true',
             referrerpolicy: 'no-referrer',
+            // 私人影库跨域直链：配合同级 moontvplus-extension 注入 ACAO，供 Anime4K 读帧
+            ...(needsPrivateSourceCrossOrigin(currentSourceRef.current)
+              ? { crossOrigin: 'anonymous' }
+              : {}),
           } as any,
           // HLS 支持配置
           customType: {

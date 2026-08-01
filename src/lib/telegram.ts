@@ -13,6 +13,7 @@ import { getConfig } from './config';
 import { db, getStorage } from './db';
 import { lockManager } from './lock';
 import type { IStorage, Notification } from './types';
+import { normalizeApiBaseUrl } from './url';
 import { getNotificationClickUrl } from './web-push';
 
 export interface TelegramConfig {
@@ -426,7 +427,7 @@ function isCloudflareEnvironment(): boolean {
 }
 
 function normalizeTelegramApiBaseUrl(input?: string | null): string {
-  const base = (input || 'https://api.telegram.org').trim().replace(/\/+$/, '');
+  const base = normalizeApiBaseUrl(input || 'https://api.telegram.org');
   return base || 'https://api.telegram.org';
 }
 

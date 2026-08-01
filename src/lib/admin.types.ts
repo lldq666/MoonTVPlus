@@ -396,10 +396,16 @@ export interface AdminConfig {
     Subscriptions: Array<{
       id: string;
       title: string;
+      /** 包含关键词：支持 & | ()；无运算符时逗号=AND */
       filterText: string;
-      excludeText?: string; // 排除关键词，逗号分隔；标题包含任一则跳过
+      /** 排除关键词：支持 & | ()；无运算符时逗号=OR */
+      excludeText?: string;
       source: 'acgrip' | 'mikan' | 'dmhy' | 'nyaa';
       enabled: boolean;
+      /** 单集只下载一次（默认 false） */
+      onePerEpisode?: boolean;
+      /** 缺集重新检索（默认 false） */
+      refillMissingEpisodes?: boolean;
       lastCheckTime: number;
       lastEpisode: number;
       createdAt: number;

@@ -40,6 +40,10 @@ export async function generateMetadata(): Promise<Metadata> {
     title: siteName,
     description: '影视聚合',
     manifest: '/manifest.json',
+    // 供配套浏览器扩展（moontvplus-extension）识别本站部署（勿删）
+    other: {
+      'moontvplus-site': '1',
+    },
     // iOS 添加到主屏幕：沉浸式状态栏（需配合 viewport-fit=cover + 顶部 safe-area）
     appleWebApp: {
       capable: true,
@@ -336,8 +340,10 @@ export default async function RootLayout({
   };
 
   return (
-    <html lang='zh-CN' suppressHydrationWarning>
+    <html lang='zh-CN' data-moontvplus='1' suppressHydrationWarning>
       <head>
+        {/* 配套 moontvplus-extension 识别指纹；仅本项目部署站应带此标记 */}
+        <meta name='moontvplus-site' content='1' />
         <meta
           name='viewport'
           content='width=device-width, initial-scale=1.0, viewport-fit=cover'
